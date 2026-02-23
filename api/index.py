@@ -28,7 +28,7 @@ def extract_pdf():
         with open(temp_path, "wb") as f:
             f.write(pdf_data)
 
-        extracted_data = []
+        grouped_data = {} # Menggunakan dictionary untuk menggabungkan No. Bukti yang sama
         pending_taxes = {} # Kantong penyimpan pajak sementara
 
         with pdfplumber.open(temp_path) as pdf:
@@ -71,7 +71,7 @@ def extract_pdf():
                         pending_taxes[kode_keg]['ppn'] += clean_number(pengeluaran_str)
                         continue
 
-                    # 3. ATURAN TRANSAKSI UTAMA: Ekstrak dan tempelkan pajak
+                   # 3. ATURAN TRANSAKSI UTAMA: Ekstrak, tempelkan pajak, dan gabungkan data ganda
                     if no_bukti:
                         pph21 = 0
                         ppn = 0
@@ -80,17 +80,34 @@ def extract_pdf():
                             ppn = pending_taxes[kode_keg]['ppn']
                             pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0} # Kosongkan setelah dipakai
 
-                        transaksi = {
-                            "Tanggal_Penerimaan": tanggal,
-                            "Kode_Kegiatan": kode_keg,
-                            "Kode_Rekening": kode_rek,
-                            "No_Bukti": no_bukti,
-                            "Uraian_BKU": uraian,
-                            "Nominal_Pengeluaran": clean_number(pengeluaran_str),
-                            "Nominal_PPh21": pph21,
-                            "Nominal_PPN": ppn
-                        }
-                        extracted_data.append(transaksi)
+                        nominal = clean_number(pengeluaran_str)
+
+                        # Cek apakah No. Bukti ini sudah ada di daftar
+                        if no_bukti in grouped_data:
+                            # Jika sudah ada, tambahkan nominalnya
+                            grouped_data[no_bukti]["Nominal_Pengeluaran"] += nominal
+                            grouped_data[no_bukti]["Nominal_PPh21"] += pph21
+                            grouped_data[no_bukti]["Nominal_PPN"] += ppn
+                            
+                            # Gabungkan uraiannya dengan pemisah koma atau garis (misal pakai " | ")
+                            # Kita cek agar tidak ada uraian kembar yang tergabung berkali-kali
+                            if uraian not in grouped_data[no_bukti]["Uraian_BKU"]:
+                                grouped_data[no_bukti]["Uraian_BKU"] += " | " + uraian
+                        else:
+                            # Jika belum ada, buat entri baru
+                            grouped_data[no_bukti] = {
+                                "Tanggal_Penerimaan": tanggal,
+                                "Kode_Kegiatan": kode_keg,
+                                "Kode_Rekening": kode_rek,
+                                "No_Bukti": no_bukti,
+                                "Uraian_BKU": uraian,
+                                "Nominal_Pengeluaran": nominal,
+                                "Nominal_PPh21": pph21,
+                                "Nominal_PPN": ppn
+                            }
+
+        # Ubah dictionary grouped_data kembali menjadi list agar sesuai format JSON awal
+        extracted_data = list(grouped_data.values())
 
         # Hapus file sementara setelah selesai
         if os.path.exists(temp_path):
