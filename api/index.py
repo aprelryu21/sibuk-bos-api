@@ -47,6 +47,8 @@ def extract_pdf():
                     uraian = str(row[4] or "").strip().replace('\n', ' ')
                     pengeluaran_str = str(row[6] or "0").strip()
 
+                    if no_bukti == "4" and uraian == "5": continue
+
                     if not uraian or uraian.lower() == "uraian": continue
 
                     uraian_lower = uraian.lower()
