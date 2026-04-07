@@ -59,42 +59,53 @@ def extract_pdf():
                         continue
 
                     # 2. ATURAN PAJAK: Simpan ke kantong berdasarkan Kode Kegiatan
-                    if "setor pph" in uraian_lower:
-                        if kode_keg not in pending_taxes:
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0}
-                        pending_taxes[kode_keg]['pph21'] += clean_number(pengeluaran_str)
-                        continue
-                        
                     if "setor ppn" in uraian_lower:
                         if kode_keg not in pending_taxes:
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0}
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
                         pending_taxes[kode_keg]['ppn'] += clean_number(pengeluaran_str)
+                        continue
+                        
+                    elif "pph 23" in uraian_lower or "pph pasal 23" in uraian_lower:
+                        if kode_keg not in pending_taxes:
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                        pending_taxes[kode_keg]['pph23'] += clean_number(pengeluaran_str)
+                        continue
+                        
+                    elif "pajak daerah" in uraian_lower or "sspd" in uraian_lower or "pajak restoran" in uraian_lower or "pb1" in uraian_lower:
+                        if kode_keg not in pending_taxes:
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                        pending_taxes[kode_keg]['sspd'] += clean_number(pengeluaran_str)
+                        continue
+
+                    elif "setor pph" in uraian_lower: # Default tangkap PPh 21
+                        if kode_keg not in pending_taxes:
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                        pending_taxes[kode_keg]['pph21'] += clean_number(pengeluaran_str)
                         continue
 
                    # 3. ATURAN TRANSAKSI UTAMA: Ekstrak, tempelkan pajak, dan gabungkan data ganda
                     if no_bukti:
-                        pph21 = 0
-                        ppn = 0
+                        pph21 = 0; ppn = 0; pph23 = 0; sspd = 0
                         if kode_keg in pending_taxes:
                             pph21 = pending_taxes[kode_keg]['pph21']
                             ppn = pending_taxes[kode_keg]['ppn']
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0} # Kosongkan setelah dipakai
+                            pph23 = pending_taxes[kode_keg]['pph23']
+                            sspd = pending_taxes[kode_keg]['sspd']
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0} # Kosongkan
 
                         nominal = clean_number(pengeluaran_str)
 
                         # Cek apakah No. Bukti ini sudah ada di daftar
                         if no_bukti in grouped_data:
-                            # Jika sudah ada, tambahkan nominalnya
                             grouped_data[no_bukti]["Nominal_Pengeluaran"] += nominal
                             grouped_data[no_bukti]["Nominal_PPh21"] += pph21
                             grouped_data[no_bukti]["Nominal_PPN"] += ppn
+                            grouped_data[no_bukti]["Nominal_PPh23"] += pph23
+                            grouped_data[no_bukti]["Nominal_SSPD"] += sspd
                             
-                            # Gabungkan uraiannya dengan pemisah koma atau garis (misal pakai " | ")
-                            # Kita cek agar tidak ada uraian kembar yang tergabung berkali-kali
                             if uraian not in grouped_data[no_bukti]["Uraian_BKU"]:
                                 grouped_data[no_bukti]["Uraian_BKU"] += " | " + uraian
                         else:
-                            # Jika belum ada, buat entri baru
                             grouped_data[no_bukti] = {
                                 "Tanggal_Penerimaan": tanggal,
                                 "Kode_Kegiatan": kode_keg,
@@ -103,7 +114,9 @@ def extract_pdf():
                                 "Uraian_BKU": uraian,
                                 "Nominal_Pengeluaran": nominal,
                                 "Nominal_PPh21": pph21,
-                                "Nominal_PPN": ppn
+                                "Nominal_PPN": ppn,
+                                "Nominal_PPh23": pph23,
+                                "Nominal_SSPD": sspd
                             }
 
         # Ubah dictionary grouped_data kembali menjadi list agar sesuai format JSON awal
