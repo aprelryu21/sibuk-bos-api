@@ -91,11 +91,13 @@ def extract_pdf():
                             ppn = pending_taxes[kode_keg]['ppn']
                             pph23 = pending_taxes[kode_keg]['pph23']
                             sspd = pending_taxes[kode_keg]['sspd']
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0} # Kosongkan
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
 
                         nominal = clean_number(pengeluaran_str)
 
-                        # Cek apakah No. Bukti ini sudah ada di daftar
+                        # --- BARU: Rekam Rincian Asli untuk Bukti Penerimaan ---
+                        detail_item = {"uraian": uraian, "nominal": nominal}
+
                         if no_bukti in grouped_data:
                             grouped_data[no_bukti]["Nominal_Pengeluaran"] += nominal
                             grouped_data[no_bukti]["Nominal_PPh21"] += pph21
@@ -105,6 +107,9 @@ def extract_pdf():
                             
                             if uraian not in grouped_data[no_bukti]["Uraian_BKU"]:
                                 grouped_data[no_bukti]["Uraian_BKU"] += " | " + uraian
+                            
+                            # Simpan ke memori rincian asli
+                            grouped_data[no_bukti]["Detail_Belanja"].append(detail_item)
                         else:
                             grouped_data[no_bukti] = {
                                 "Tanggal_Penerimaan": tanggal,
@@ -116,7 +121,8 @@ def extract_pdf():
                                 "Nominal_PPh21": pph21,
                                 "Nominal_PPN": ppn,
                                 "Nominal_PPh23": pph23,
-                                "Nominal_SSPD": sspd
+                                "Nominal_SSPD": sspd,
+                                "Detail_Belanja": [detail_item] # Buat array baru
                             }
 
         # Ubah dictionary grouped_data kembali menjadi list agar sesuai format JSON awal
