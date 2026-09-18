@@ -2,13 +2,19 @@ from flask import Flask, request, jsonify
 import pdfplumber
 import base64
 import os
+import uuid
+import tempfile
 
 app = Flask(__name__)
 
 # Fungsi untuk membersihkan titik pemisah ribuan agar menjadi angka murni
 def clean_number(text):
     if not text: return 0
-    text = str(text).replace('.', '').replace(',', '').strip()
+    text = str(text).strip()
+    # Pisahkan angka desimal sen di belakang koma jika ada
+    if ',' in text:
+        text = text.split(',')[0]
+    text = text.replace('.', '').strip()
     try:
         return int(text)
     except:
@@ -23,7 +29,8 @@ def extract_pdf():
 
         # Menerima file PDF dari Google Apps Script dan menyimpannya sementara
         pdf_data = base64.b64decode(data['pdf_base64'])
-        temp_path = "/tmp/temp_bku.pdf" 
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, f"bku_{uuid.uuid4().hex}.pdf")
         
         with open(temp_path, "wb") as f:
             f.write(pdf_data)
@@ -61,37 +68,44 @@ def extract_pdf():
                     # 2. ATURAN PAJAK: Simpan ke kantong berdasarkan Kode Kegiatan
                     if "setor ppn" in uraian_lower:
                         if kode_keg not in pending_taxes:
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0, 'pph22': 0}
                         pending_taxes[kode_keg]['ppn'] += clean_number(pengeluaran_str)
+                        continue
+
+                    elif "pph 22" in uraian_lower or "pph pasal 22" in uraian_lower:
+                        if kode_keg not in pending_taxes:
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0, 'pph22': 0}
+                        pending_taxes[kode_keg]['pph22'] += clean_number(pengeluaran_str)
                         continue
                         
                     elif "pph 23" in uraian_lower or "pph pasal 23" in uraian_lower:
                         if kode_keg not in pending_taxes:
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0, 'pph22': 0}
                         pending_taxes[kode_keg]['pph23'] += clean_number(pengeluaran_str)
                         continue
                         
                     elif "pajak daerah" in uraian_lower or "sspd" in uraian_lower or "pajak restoran" in uraian_lower or "pb1" in uraian_lower:
                         if kode_keg not in pending_taxes:
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0, 'pph22': 0}
                         pending_taxes[kode_keg]['sspd'] += clean_number(pengeluaran_str)
                         continue
 
                     elif "setor pph" in uraian_lower: # Default tangkap PPh 21
                         if kode_keg not in pending_taxes:
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0, 'pph22': 0}
                         pending_taxes[kode_keg]['pph21'] += clean_number(pengeluaran_str)
                         continue
 
                    # 3. ATURAN TRANSAKSI UTAMA: Ekstrak, tempelkan pajak, dan gabungkan data ganda
                     if no_bukti:
-                        pph21 = 0; ppn = 0; pph23 = 0; sspd = 0
+                        pph21 = 0; ppn = 0; pph23 = 0; sspd = 0; pph22 = 0
                         if kode_keg in pending_taxes:
                             pph21 = pending_taxes[kode_keg]['pph21']
                             ppn = pending_taxes[kode_keg]['ppn']
                             pph23 = pending_taxes[kode_keg]['pph23']
                             sspd = pending_taxes[kode_keg]['sspd']
-                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0}
+                            pph22 = pending_taxes[kode_keg].get('pph22', 0)
+                            pending_taxes[kode_keg] = {'pph21': 0, 'ppn': 0, 'pph23': 0, 'sspd': 0, 'pph22': 0}
 
                         nominal = clean_number(pengeluaran_str)
 
@@ -104,6 +118,7 @@ def extract_pdf():
                             grouped_data[no_bukti]["Nominal_PPN"] += ppn
                             grouped_data[no_bukti]["Nominal_PPh23"] += pph23
                             grouped_data[no_bukti]["Nominal_SSPD"] += sspd
+                            grouped_data[no_bukti]["Nominal_PPh22"] += pph22
                             
                             if uraian not in grouped_data[no_bukti]["Uraian_BKU"]:
                                 grouped_data[no_bukti]["Uraian_BKU"] += " | " + uraian
@@ -122,20 +137,22 @@ def extract_pdf():
                                 "Nominal_PPN": ppn,
                                 "Nominal_PPh23": pph23,
                                 "Nominal_SSPD": sspd,
+                                "Nominal_PPh22": pph22,
                                 "Detail_Belanja": [detail_item] # Buat array baru
                             }
 
         # Ubah dictionary grouped_data kembali menjadi list agar sesuai format JSON awal
         extracted_data = list(grouped_data.values())
-
-        # Hapus file sementara setelah selesai
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
         return jsonify({"status": "success", "data": extracted_data}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
 
 if __name__ == '__main__':
     app.run(debug=True)
